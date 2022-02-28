@@ -1,0 +1,6 @@
+{
+    "C_Cpp.default.includePath": [
+        "/usr/local/include/ImageMagick-7"
+    ],
+    "C_Cpp.errorSquiggles": "Enabled"
+}
