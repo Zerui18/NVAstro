@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <chrono>
 #include <Magick++.h>
+#include <cuda_runtime.h>
 #include "utils.hpp"
+#include "cuda/ops.h"
 
 using namespace std;
 using namespace Magick;
@@ -35,52 +37,55 @@ Image cpu_average(vector<Image> &images) {
     memset(averagedPixelsBuffer, 0, columns * rows * 3 * sizeof(q));
     int j = 0;
     for (Image &image:images) {
-        printf("adding images [%d]\n", ++j);
-        TIMER_START(add image)
         // fastest access via pixels cache
         Pixels pixelsCache(image);
-        MagickCore::Quantum *pixels = pixelsCache.get(0, 0, columns, rows);
+        q *pixels = pixelsCache.get(0, 0, columns, rows);
         for (int i=0; i<rows*columns; i++) {
             averagedPixelsBuffer[i * 3] += pixels[i * 3];
             averagedPixelsBuffer[i * 3 + 1] += pixels[i * 3 + 1];
             averagedPixelsBuffer[i * 3 + 2] += pixels[i * 3 + 2];
         }
-        TIMER_END(add image)
     }
-    TIMER_START(ave image)
     const q n = (q) images.size();
     for (int i=0; i<rows*columns*3; i++) {
         averagedPixelsBuffer[i] /= n;
     }
-    TIMER_END(ave image)
     Image aveImage(columns, rows, "RGB", Magick::StorageType::QuantumPixel, averagedPixelsBuffer);
     return aveImage;
-    // q max = 0;
-    // q min = 60000;
-    // q ave = 0;
-    // q nn = (q) rows*columns*3;
-    // for (int i=0;i<rows*columns*3; i++) {
-    //     max = std::max(max, averagedPixelsBuffer[i]);
-    //     min = std::min(min, averagedPixelsBuffer[i]);
-    //     ave += averagedPixelsBuffer[i] / nn;
-    // }
-    // printf("max: %f, min: %f, ave: %f\n", max, min, ave);
 }
 
 Image gpu_average(vector<Image> &images) {
+    int columns = images[0].columns();
+    int rows = images[0].rows();
 
+    TIMER_START(cpy imgs)
+    q *u_imageBuffers;
+    int imageSize = columns * rows * 3;
+    cudaMallocManaged(&u_imageBuffers, images.size() * imageSize * sizeof(q));
+    for (int i=0; i<images.size(); i++) {
+        Pixels pixelsCache(images[i]);
+        q *pixels = pixelsCache.get(0, 0, columns, rows);
+        memcpy(u_imageBuffers + i*imageSize, pixels, imageSize);
+    }
+    TIMER_END(cpy imgs)
+    TIMER_START(ave imgs)
+    op_reduce_average_2d(u_imageBuffers, images.size(), imageSize);
+    cudaDeviceSynchronize();
+    TIMER_END(ave_imgs)
 }
 
 int main(int argc, char **argv) {
-    printf("size of quantum: %ld, pixelpacket: %ld\n", sizeof(MagickCore::Quantum), sizeof(MagickCore::PixelPacket));
+    printf("size of quantum: %ld, pixelpacket: %ld\n", sizeof(q), sizeof(MagickCore::PixelPacket));
     vector<string> imagePaths = glob("/home/zx02/Documents/Astro/Data/Other/M31 RAW 48F ISO800 8min/*.CR2");
     vector<Image> images;
     TIMER_START(load images)
     for (string path:imagePaths) {
         images.push_back(Image(path));
-        break;
     }
     TIMER_END(load images)
-    cpu_average(images);
-    return 0;
+    TIMER_START(cpu ave)
+    Image image = cpu_average(images);
+    TIMER_END(cpu ave)
+    // image.write("average.jpeg");
+    gpu_average(images);
 }
