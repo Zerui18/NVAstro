@@ -16,7 +16,7 @@ $(CUDA_OBJ_FILES): build/%.o: src/%.cu
 build/nvastro: $(CUDA_OBJ_FILES) src/*.cpp
 	$(CC) $(CC_FLAGS) -o $@ $^ -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart $(shell Magick++-config --cppflags --cxxflags --ldflags --libs)
 
-#test
+# test
 build/test_cuda: $(CUDA_OBJ_FILES) src/test_cuda.cu
 	$(NVCC) $(CC_FLAGS) -arch=$(CUDA_ARCH) -c -o build/test_cuda.o src/test_cuda.cu
 	$(NVCC) $(CC_FLAGS) -arch=$(CUDA_ARCH) -o build/test_cuda $(CUDA_OBJ_FILES) build/test_cuda.o
